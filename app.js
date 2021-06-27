@@ -3,6 +3,7 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const ejs = require('ejs');
 const mongoose = require('mongoose');
+const encrypt = require('mongoose-encryption');
 
 mongoose.connect('mongodb://localhost:27017/userDB', 
     { useNewUrlParser: true, useUnifiedTopology: true }
@@ -12,6 +13,13 @@ const userSchema = new mongoose.Schema ({
     email: String,
     password: String
 });
+
+/*
+encrypt plugin will automatically encrypt the fields behind the scenes
+when Moodel.save() is called, and decrypt when model.find() is called
+*/
+const secret = 'Thisisourlittlesecret.';
+userSchema.plugin(encrypt, { secret: secret, encryptedFields: ['password'] });
 
 const User = new mongoose.model('User', userSchema);
 
@@ -57,6 +65,8 @@ app.post('/register', wrapAsync(async(req, res, next) => {
 app.post('/login', wrapAsync(async (req, res, next) => {
     const {username, password } = req.body;
     const foundUser = await User.findOne({ email: username});
+    // Hackers can see the password if they get access to app.js file
+    // and print out the foundUser.password in plain text
     if(foundUser) {
         if(foundUser.password == password) {
             res.render('secrets');
