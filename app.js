@@ -1,8 +1,16 @@
-//jshint esversion:6
+// Dotenv is a zero-dependency module 
+// that loads environment variables from a .env file into process.env. 
+// https://www.npmjs.com/package/dotenv
+require('dotenv').config();
+
 const express = require('express');
 const bodyParser = require('body-parser');
 const ejs = require('ejs');
 const mongoose = require('mongoose');
+
+/*https://www.npmjs.com/package/mongoose-encryption
+Simple encryption and authentication for mongoose documents
+Encryption and decryption happen transparently during save and find.*/
 const encrypt = require('mongoose-encryption');
 
 mongoose.connect('mongodb://localhost:27017/userDB', 
@@ -18,8 +26,9 @@ const userSchema = new mongoose.Schema ({
 encrypt plugin will automatically encrypt the fields behind the scenes
 when Moodel.save() is called, and decrypt when model.find() is called
 */
-const secret = 'Thisisourlittlesecret.';
-userSchema.plugin(encrypt, { secret: secret, encryptedFields: ['password'] });
+// const secret = 'Thisisourlittlesecret.';
+// console.log(process.env.API_KEY);
+userSchema.plugin(encrypt, { secret: process.env.SECRET, encryptedFields: ['password'] });
 
 const User = new mongoose.model('User', userSchema);
 
