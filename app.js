@@ -1,6 +1,23 @@
-// Dotenv is a zero-dependency module 
-// that loads environment variables from a .env file into process.env. 
-// https://www.npmjs.com/package/dotenv
+/******************************
+ * http://www.passportjs.org/packages/passport-google-oauth20/
+ * 1.npm install passport-google-oauth20
+ * 2. Create an application using Google Developers Console
+ * 3. Save Client ID and Client secret in .env file
+ * 4. Configure Strategy
+ * 5. Configure mongoose-findorcreate, Simple plugin for Mongoose which adds a findOrCreate method to models.
+ * 6. Add buttons for sign up/in with google on frontend
+ * 7. Add routes to /auth/google, Use passport.authenticate(), specifying the 'google' strategy, to authenticate requests.
+ * 8. Add route for authorized redirect URI http://localhost:3000/auth/google/secrets
+ * 9. Replace the serialize and deserialize code with PassportJS version
+ * 10. Save the google profile id in database to help remember the user when they sign in after registering
+ * 11. By default, Google auth will only save a user inside database with object id and we cannot login again after registering.
+ * 12. We only get user id and name, no password in our database so google auth is relatively more safer.
+ * 13. Buttons styling https://lipis.github.io/bootstrap-social/, copy bootstrap-social.css file in our public css folder
+ * 14. As we have implemented sessions and cookeis, we can still be autnenticated and can go back to secrets page even if we visit some other page
+ * 15. Implement auth with Facebook as bonus task
+ */
+
+
 require('dotenv').config();
 
 const express = require('express');
@@ -9,9 +26,9 @@ const ejs = require('ejs');
 const mongoose = require('mongoose');
 const session = require('express-session');
 const passport = require('passport');
-// passport-local is a dependency for passport-local-mongoose so does not need to be exposed
 const passportLocalMongoose = require('passport-local-mongoose');
-
+const GoogleStrategy = require('passport-google-oauth20').Strategy;
+const findOrCreate = require('mongoose-findorcreate');
 
 mongoose.connect('mongodb://localhost:27017/userDB', {
   useNewUrlParser: true,
@@ -33,7 +50,6 @@ app.use(express.urlencoded({
     extended: true
 }));
 
-// Note: whenever server restarts, cookies get deleted and session restarts
 const sessionOptions = { 
     secret: 'thisisnotagoodsecret', 
     resave: false, 
@@ -41,42 +57,65 @@ const sessionOptions = {
   };
 app.use(session(sessionOptions));
 
-/**************   
-https://www.passportjs.org/docs/configure/
-In a Connect or Express-based application, passport.initialize() middleware is required to initialize Passport. 
-If your application uses persistent login sessions, passport.session() middleware must also be used.
-**************/
+
 app.use(passport.initialize());
 app.use(passport.session());
 
-
 const userSchema = new mongoose.Schema ({
     email: String,
-    password: String
+    password: String,
+    googleId: String
 });
 
-/* First you need to plugin Passport-Local Mongoose into your User schema
-Passport-Local Mongoose will add a username, hash and salt field to store the username, the hashed password and the salt value.
-Additionally Passport-Local Mongoose adds some methods to your Schema. 
-https://www.npmjs.com/package/passport-local-mongoose
-*/
 userSchema.plugin(passportLocalMongoose);
+userSchema.plugin(findOrCreate);
 
 const User = new mongoose.model('User', userSchema);
 
-// The createStrategy is responsible to setup passport-local LocalStrategy with the correct options.
-// use static authenticate method of model in LocalStrategy
-// // passport.use(new LocalStrategy(User.authenticate()));
 passport.use(User.createStrategy());
-// use static serialize and deserialize of model for passport session support
-// In order to support login sessions, Passport will serialize and deserialize user instances to and from the session.
-passport.serializeUser(User.serializeUser());
-passport.deserializeUser(User.deserializeUser());
+passport.serializeUser(function(user, done) {
+    done(null, user.id);
+});
+  
+passport.deserializeUser(function(id, done) {
+    User.findById(id, function(err, user) {
+        done(err, user);
+    });
+});
+
+
+// Google ouath2.0 configure strategy
+passport.use(new GoogleStrategy({
+    clientID: process.env.CLIENT_ID,
+    clientSecret: process.env.CLIENT_SECRET,
+    callbackURL: "http://localhost:3000/auth/google/secrets"
+  },
+  function(accessToken, refreshToken, profile, cb) {
+    console.log(profile);
+    User.findOrCreate({ googleId: profile.id }, function (err, user) {
+      return cb(err, user);
+    });
+  }
+));
 
 
 app.get('/', (req, res) => {
     res.render('home');
 });
+
+app.get('/auth/google',
+  passport.authenticate('google', { scope: ['profile'] })
+);
+app.get('/auth/google/secrets', 
+  passport.authenticate('google', { failureRedirect: '/login' }),
+  function(req, res) {
+    // Successful authentication, redirect to secrets.
+    res.redirect('/secrets');
+  }
+);
+
+
+
 
 app.get('/login', (req, res) => {
     res.render('login');
@@ -87,17 +126,6 @@ app.get('/register', (req, res) => {
 });
 
 app.get('/secrets', (req, res) => {
-    /* The below line was added so we can't display the "/secrets" page
-    after we logged out using the "back" button of the browser, which
-    would normally display the browser cache and thus expose the 
-    "/secrets" page we want to protect.*/
-    res.set(
-        'Cache-Control', 
-        'no-cache, private, no-store, must-revalidate, max-stal e=0, post-check=0, pre-check=0'
-    );
-    //req.isAuthenticated() will return true if user is logged in
-    // The user id is saved in a session cookie ID inside user browser
-    // No need to sign in again when trying to access secret page
     if (req.isAuthenticated()) {
         res.render('secrets');
     } else {
@@ -107,9 +135,7 @@ app.get('/secrets', (req, res) => {
 
 app.post('/register', (req, res, next) => {
     const {username, password } = req.body;
-    // register() method comes from the passport-local-mongoose plugin
-    // passport-local-mongoose will salt ans hash password automatically
-    // https://www.npmjs.com/package/passport-local-mongoose
+
     User.register({username: username}, password, (err, user) => {
         if(err) {
             console.log(err);
@@ -120,14 +146,6 @@ app.post('/register', (req, res, next) => {
             // passport.authenticate('local')(req, res, function () {
             //     res.redirect('/secrets');
             // })
-
-            /* https://www.passportjs.org/docs/login/
-               Passport exposes a login() function on req (also aliased as logIn()) 
-               that can be used to establish a login session.
-               This function is primarily used when users sign up, during 
-               which req.login() can be invoked to automatically log in the newly registered user.
-               https://stackoverflow.com/questions/16817800/passport-node-js-automatic-login-after-adding-user
-            */
             // better way to authenticate and login handle errors    
             req.login(user, function(err) {
                 if (err) { return next(err); }
@@ -139,12 +157,6 @@ app.post('/register', (req, res, next) => {
 });
 
 
-/*
-    http://www.passportjs.org/docs/authenticate/
-    Authenticating requests is as simple as calling passport.authenticate() 
-    and specifying which strategy to employ.
-    Note: passport.authenticate() middleware invokes req.login() automatically. 
-*/
 app.post('/login', passport.authenticate('local', { 
                             successRedirect: '/secrets',
                             failureRedirect: '/login' 
@@ -153,12 +165,6 @@ app.post('/login', passport.authenticate('local', {
 
 
 app.get('/logout', (req, res, next) => {
-    /*
-    https://www.passportjs.org/docs/logout/
-    Passport exposes a logout() function on req (also aliased as logOut()) 
-    that can be called from any route handler which needs to terminate a login session. 
-    Invoking logout() will remove the req.user property and clear the login session (if any).
-     */
     req.logout();
     res.redirect('/');
 });
