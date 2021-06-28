@@ -27,6 +27,7 @@ db.once('open', () => {
 const app = express();
 
 app.set('view engine', 'ejs');
+app.set('Cache-Control', 'no-store');   // will prevent any caching from webbrowser
 app.use(express.static('public'));
 app.use(express.urlencoded({
     extended: true
@@ -73,14 +74,6 @@ passport.serializeUser(User.serializeUser());
 passport.deserializeUser(User.deserializeUser());
 
 
-
-function wrapAsync(fn){
-    return function(req, res, next){
-      fn(req, res, next).catch(e => next(e));
-    }
-};
-
-
 app.get('/', (req, res) => {
     res.render('home');
 });
@@ -115,6 +108,8 @@ app.get('/secrets', (req, res) => {
 app.post('/register', (req, res, next) => {
     const {username, password } = req.body;
     // register() method comes from the passport-local-mongoose plugin
+    // passport-local-mongoose will salt ans hash password automatically
+    // https://www.npmjs.com/package/passport-local-mongoose
     User.register({username: username}, password, (err, user) => {
         if(err) {
             console.log(err);
@@ -122,6 +117,10 @@ app.post('/register', (req, res, next) => {
         }
         else 
         {
+            // passport.authenticate('local')(req, res, function () {
+            //     res.redirect('/secrets');
+            // })
+
             /* https://www.passportjs.org/docs/login/
                Passport exposes a login() function on req (also aliased as logIn()) 
                that can be used to establish a login session.
@@ -129,6 +128,7 @@ app.post('/register', (req, res, next) => {
                which req.login() can be invoked to automatically log in the newly registered user.
                https://stackoverflow.com/questions/16817800/passport-node-js-automatic-login-after-adding-user
             */
+            // better way to authenticate and login handle errors    
             req.login(user, function(err) {
                 if (err) { return next(err); }
                 // console.log(user);
