@@ -8,10 +8,21 @@ const bodyParser = require('body-parser');
 const ejs = require('ejs');
 const mongoose = require('mongoose');
 
-/*https://www.npmjs.com/package/mongoose-encryption
-Simple encryption and authentication for mongoose documents
-Encryption and decryption happen transparently during save and find.*/
-const encrypt = require('mongoose-encryption');
+// // /*https://www.npmjs.com/package/mongoose-encryption
+// // Simple encryption and authentication for mongoose documents
+// // Encryption and decryption happen transparently during save and find.*/
+// // Problem: password can be easily decrypted if secret key gets hacked
+// // Solution: Use Hash passwords, hashes are irreversible
+// const encrypt = require('mongoose-encryption');
+
+// // a JavaScript function for hashing messages with MD5.
+// // Hash is vulnerable to Hash lookup tables using common passwords, dictionary attack
+// const  md5 = require('md5');
+
+// A library to help you hash passwords with Salting.
+// https://www.npmjs.com/package/bcrypt
+const bcrypt = require('bcrypt');
+const saltRounds = 10;
 
 mongoose.connect('mongodb://localhost:27017/userDB', 
     { useNewUrlParser: true, useUnifiedTopology: true }
@@ -22,13 +33,13 @@ const userSchema = new mongoose.Schema ({
     password: String
 });
 
-/*
-encrypt plugin will automatically encrypt the fields behind the scenes
-when Moodel.save() is called, and decrypt when model.find() is called
-*/
-// const secret = 'Thisisourlittlesecret.';
-// console.log(process.env.API_KEY);
-userSchema.plugin(encrypt, { secret: process.env.SECRET, encryptedFields: ['password'] });
+// /*
+// encrypt plugin will automatically encrypt the fields behind the scenes
+// when Moodel.save() is called, and decrypt when model.find() is called
+// */
+// // const secret = 'Thisisourlittlesecret.';
+// // console.log(process.env.API_KEY);
+// userSchema.plugin(encrypt, { secret: process.env.SECRET, encryptedFields: ['password'] });
 
 const User = new mongoose.model('User', userSchema);
 
@@ -63,9 +74,12 @@ app.get('/register', (req, res) => {
 });
 
 app.post('/register', wrapAsync(async(req, res, next) => {
+    const {username, password } = req.body;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
     const newUser = new User({
-        email: req.body.username,
-        password: req.body.password
+        email: username,
+        password: hashedPassword
+        // password: md5(req.body.password)
     });
     await newUser.save();
     res.render('secrets');
@@ -75,9 +89,10 @@ app.post('/login', wrapAsync(async (req, res, next) => {
     const {username, password } = req.body;
     const foundUser = await User.findOne({ email: username});
     // Hackers can see the password if they get access to app.js file
-    // and print out the foundUser.password in plain text
+    // and print out the foundUser.password in plain text if simple encryption is used
     if(foundUser) {
-        if(foundUser.password == password) {
+        const passwordMatched = await bcrypt.compare(password, foundUser.password);
+        if(passwordMatched) {
             res.render('secrets');
         }
     }
