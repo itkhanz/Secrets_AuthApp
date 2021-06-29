@@ -32,6 +32,7 @@ const passportLocalMongoose = require('passport-local-mongoose');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const FacebookStrategy = require('passport-facebook').Strategy;
 const findOrCreate = require('mongoose-findorcreate');
+const { findSeries } = require('async');
 
 mongoose.connect('mongodb://localhost:27017/userDB', {
   useNewUrlParser: true,
@@ -68,7 +69,8 @@ const userSchema = new mongoose.Schema ({
     email: String,
     password: String,
     googleId: String,
-    facebookId: String
+    facebookId: String,
+    secret: String
 });
 
 userSchema.plugin(passportLocalMongoose);
@@ -157,12 +159,45 @@ app.get('/register', (req, res) => {
 });
 
 app.get('/secrets', (req, res) => {
+    User.find({"secret": {$ne: null}}, function(err, foundUsers) {
+        if(err) {
+            console.log(err);
+        } else {
+            if(foundUsers) {
+                res.render("secrets", {usersWithSecrets: foundUsers});
+            }
+        }
+    });
+});
+
+app.get('/submit', (req, res) => {
     if (req.isAuthenticated()) {
-        res.render('secrets');
+        res.render('submit');
     } else {
         res.redirect('/login');
     }
 });
+
+app.post('/submit', (req, res) => {
+    const submittedSecret = req.body.secret
+    
+    // passport saves the user details in req object when a new login session is created
+    // console.log(req.user)
+    User.findById(req.user.id, function(err, foundUser) {
+        if(err) {
+            console.log(err);
+        }
+        else {
+            if(foundUser) {
+                foundUser.secret = submittedSecret;
+                foundUser.save(function() {
+                    res.redirect("/secrets");
+                });
+            }
+        }
+    });
+});
+
 
 app.post('/register', (req, res, next) => {
     const {username, password } = req.body;
