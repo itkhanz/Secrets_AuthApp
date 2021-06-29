@@ -1,20 +1,22 @@
 /******************************
- * http://www.passportjs.org/packages/passport-google-oauth20/
- * 1.npm install passport-google-oauth20
- * 2. Create an application using Google Developers Console
- * 3. Save Client ID and Client secret in .env file
- * 4. Configure Strategy
- * 5. Configure mongoose-findorcreate, Simple plugin for Mongoose which adds a findOrCreate method to models.
- * 6. Add buttons for sign up/in with google on frontend
- * 7. Add routes to /auth/google, Use passport.authenticate(), specifying the 'google' strategy, to authenticate requests.
- * 8. Add route for authorized redirect URI http://localhost:3000/auth/google/secrets
- * 9. Replace the serialize and deserialize code with PassportJS version
- * 10. Save the google profile id in database to help remember the user when they sign in after registering
- * 11. By default, Google auth will only save a user inside database with object id and we cannot login again after registering.
- * 12. We only get user id and name, no password in our database so google auth is relatively more safer.
- * 13. Buttons styling https://lipis.github.io/bootstrap-social/, copy bootstrap-social.css file in our public css folder
- * 14. As we have implemented sessions and cookeis, we can still be autnenticated and can go back to secrets page even if we visit some other page
- * 15. Implement auth with Facebook as bonus task
+ * http://www.passportjs.org/packages/passport-facebook/
+ * 1.npm install passport-facebook
+ * 2. Create an Application on Facebook Developers platform
+ *    Links:- 
+ *      https://developers.facebook.com/docs/development#register
+ * 3. Important! Create Test app for development purposes otherwise gives ssl error
+ * 4. In Settings->Basics, add platform/wesbite as callback URI http://localhost:3000/auth/facebook/secrets
+ * 5. Copy the  App ID and App Secret in .env file
+ * 6. Do not use scope,  if you only require user basic information, don't pass any scope, just use passport.authenticate('facebook').
+ *  7. Resources:-
+ *      https://www.twilio.com/blog/facebook-oauth-login-node-js-app-passport-js
+ *      https://medium.com/swlh/node-and-passport-js-facebook-authentication-76cbfa903ff3
+ * 8. Issues:-
+ *      (1: Facebook does not ask for login credentials again after logout)
+ *      https://stackoverflow.com/questions/12873960/passport-js-facebook-strategy-logout-issue
+ *      https://developers.facebook.com/docs/facebook-login/reauthentication
+ *      https://github.com/jaredhanson/passport-facebook/issues/202
+ *      https://stackoverflow.com/questions/32985655/passport-facebook-logout-not-working
  */
 
 
@@ -28,6 +30,7 @@ const session = require('express-session');
 const passport = require('passport');
 const passportLocalMongoose = require('passport-local-mongoose');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
+const FacebookStrategy = require('passport-facebook').Strategy;
 const findOrCreate = require('mongoose-findorcreate');
 
 mongoose.connect('mongodb://localhost:27017/userDB', {
@@ -64,7 +67,8 @@ app.use(passport.session());
 const userSchema = new mongoose.Schema ({
     email: String,
     password: String,
-    googleId: String
+    googleId: String,
+    facebookId: String
 });
 
 userSchema.plugin(passportLocalMongoose);
@@ -84,15 +88,30 @@ passport.deserializeUser(function(id, done) {
 });
 
 
-// Google ouath2.0 configure strategy
+// Google Ouath2.0 configure strategy
 passport.use(new GoogleStrategy({
-    clientID: process.env.CLIENT_ID,
-    clientSecret: process.env.CLIENT_SECRET,
+    clientID: process.env.GOOGLE_CLIENT_ID,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET,
     callbackURL: "http://localhost:3000/auth/google/secrets"
   },
   function(accessToken, refreshToken, profile, cb) {
-    console.log(profile);
+    // console.log(profile);
     User.findOrCreate({ googleId: profile.id }, function (err, user) {
+      return cb(err, user);
+    });
+  }
+));
+
+// Facebook OAuth 2.0 Configure strategy
+passport.use(new FacebookStrategy({
+    clientID: process.env.FACEBOOK_APP_ID,
+    clientSecret: process.env.FACEBOOK_APP_SECRET,
+    callbackURL: "http://localhost:3000/auth/facebook/secrets",
+    profileFields: ["email", "name", "id"]
+  },
+  function(accessToken, refreshToken, profile, cb) {
+    // console.log(profile);
+    User.findOrCreate({ facebookId: profile.id }, function (err, user) {
       return cb(err, user);
     });
   }
@@ -113,6 +132,18 @@ app.get('/auth/google/secrets',
     res.redirect('/secrets');
   }
 );
+
+app.get('/auth/facebook',
+  passport.authenticate('facebook', {authType: 'reauthenticate'})
+);
+
+app.get('/auth/facebook/secrets',
+  passport.authenticate('facebook', { failureRedirect: '/login' }),
+  function(req, res) {
+    // Successful authentication, redirect home.
+    res.redirect('/secrets');
+});
+
 
 
 
@@ -165,7 +196,15 @@ app.post('/login', passport.authenticate('local', {
 
 
 app.get('/logout', (req, res, next) => {
-    req.logout();
+    // req.session = null;
+    req.session.destroy((err) => {
+        if(err) return next(err)
+    
+        req.logout();
+    
+        // res.sendStatus(200)
+    });
+    // req.logout();
     res.redirect('/');
 });
 
